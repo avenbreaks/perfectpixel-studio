@@ -17,6 +17,17 @@ import (
 // bytePlusEndpoint은 BytePlus ModelArk 이미지 생성(Seedream) API 주소입니다.
 const bytePlusEndpoint = "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations"
 
+func init() {
+	registerProvider(providerDef{
+		id:           ProviderBytePlus,
+		label:        "BytePlus",
+		defaultModel: "seedream-4-0-250828",
+		models:       []string{"seedream-4-0-250828", "seedream-3-0-t2i-250415", "seededit-3-0-i2i-250628"},
+		sortOrder:    5,
+		newFunc:      func(apiKey, model string) Provider { return NewBytePlus(apiKey, model) },
+	})
+}
+
 // BytePlus는 BytePlus ModelArk(Seedream) 이미지 생성 클라이언트입니다.
 type BytePlus struct {
 	APIKey string
