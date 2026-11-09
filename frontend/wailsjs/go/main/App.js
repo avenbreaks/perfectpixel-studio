@@ -82,6 +82,10 @@ export function SaveProviderKey(arg1, arg2) {
   return window['go']['main']['App']['SaveProviderKey'](arg1, arg2);
 }
 
+export function SaveProviderConfig(arg1, arg2) {
+  return window['go']['main']['App']['SaveProviderConfig'](arg1, arg2);
+}
+
 export function SaveProviderModel(arg1, arg2) {
   return window['go']['main']['App']['SaveProviderModel'](arg1, arg2);
 }

@@ -138,17 +138,37 @@ export namespace main {
 	    keyPreview: string;
 	    model: string;
 	    models: string[];
-	
+	    baseUrl: string;
+	    accountId: string;
+
 	    static createFrom(source: any = {}) {
 	        return new ProviderInfo(source);
 	    }
-	
+
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.hasKey = source["hasKey"];
 	        this.keyPreview = source["keyPreview"];
 	        this.model = source["model"];
 	        this.models = source["models"];
+	        this.baseUrl = source["baseUrl"];
+	        this.accountId = source["accountId"];
+	    }
+	}
+	export class ProviderConfigArgs {
+	    apiKey: string;
+	    baseUrl: string;
+	    accountId: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ProviderConfigArgs(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.apiKey = source["apiKey"];
+	        this.baseUrl = source["baseUrl"];
+	        this.accountId = source["accountId"];
 	    }
 	}
 	export class SettingsInfo {

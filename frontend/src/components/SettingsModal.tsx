@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { SaveProviderKey, SaveProviderModel, SetProvider } from "../../wailsjs/go/main/App";
+import { SaveProviderConfig, SaveProviderKey, SaveProviderModel, SetProvider } from "../../wailsjs/go/main/App";
 import { useI18n, LANGUAGES, Lang } from "../i18n";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
@@ -14,6 +14,8 @@ export interface IProviderInfo {
   keyPreview: string;
   model: string;
   models?: string[]; // 선택 가능한 모델 목록 (최신 모델이 맨 앞)
+  baseUrl?: string; // custom(OpenAI 호환) Base URL (원문 노출)
+  accountId?: string; // Cloudflare Workers AI 계정 ID (원문 노출)
 }
 
 export interface ISettings {
@@ -27,12 +29,66 @@ interface IProps {
   onSaved: (msg: string, keepOpen?: boolean) => void;
 }
 
-const PROVIDERS: { key: string; label: string; placeholder: string }[] = [
-  { key: "gemini", label: "Gemini", placeholder: "AIza..." },
-  { key: "openai", label: "OpenAI", placeholder: "sk-..." },
-  { key: "openrouter", label: "OpenRouter", placeholder: "sk-or-..." },
-  { key: "fal", label: "fal.ai", placeholder: "key_id:key_secret" },
-  { key: "byteplus", label: "BytePlus", placeholder: "ark-..." },
+// 자격 증명 입력 필드 정의 (단일 키 프로바이더는 key 하나, cloudflare는 accountId+key,
+// custom은 baseUrl+key)
+type CredFieldId = "key" | "accountId" | "baseUrl";
+
+interface ICredField {
+  id: CredFieldId;
+  labelKey: string;
+  placeholder: string;
+  type?: "password" | "text";
+  required?: boolean;
+}
+
+interface IProviderMeta {
+  key: string;
+  label: string;
+  fields: ICredField[];
+}
+
+const PROVIDERS: IProviderMeta[] = [
+  {
+    key: "gemini",
+    label: "Gemini",
+    fields: [{ id: "key", labelKey: "api_key", placeholder: "AIza...", type: "password", required: true }],
+  },
+  {
+    key: "openai",
+    label: "OpenAI",
+    fields: [{ id: "key", labelKey: "api_key", placeholder: "sk-...", type: "password", required: true }],
+  },
+  {
+    key: "openrouter",
+    label: "OpenRouter",
+    fields: [{ id: "key", labelKey: "api_key", placeholder: "sk-or-...", type: "password", required: true }],
+  },
+  {
+    key: "fal",
+    label: "fal.ai",
+    fields: [{ id: "key", labelKey: "api_key", placeholder: "key_id:key_secret", type: "password", required: true }],
+  },
+  {
+    key: "byteplus",
+    label: "BytePlus",
+    fields: [{ id: "key", labelKey: "api_key", placeholder: "ark-...", type: "password", required: true }],
+  },
+  {
+    key: "cloudflare",
+    label: "Cloudflare",
+    fields: [
+      { id: "accountId", labelKey: "account_id", placeholder: "your-account-id", type: "text", required: true },
+      { id: "key", labelKey: "api_token", placeholder: "your-api-token", type: "password", required: true },
+    ],
+  },
+  {
+    key: "custom",
+    label: "Custom",
+    fields: [
+      { id: "baseUrl", labelKey: "base_url", placeholder: "https://api.example.com", type: "text", required: true },
+      { id: "key", labelKey: "api_key_optional", placeholder: "sk-... (optional)", type: "password", required: false },
+    ],
+  },
 ];
 
 // 멀티 프로바이더 설정 모달 (shadcn Dialog)
@@ -40,7 +96,7 @@ export default function SettingsModal({ settings, onClose, onSaved }: IProps) {
   const { t, lang, setLang } = useI18n();
   const activeHasKey = !!settings.providers?.[settings.provider]?.hasKey;
   const [tab, setTab] = useState(settings.provider || "gemini");
-  const [key, setKey] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
   const [model, setModel] = useState(settings.providers?.[settings.provider || "gemini"]?.model ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -48,22 +104,49 @@ export default function SettingsModal({ settings, onClose, onSaved }: IProps) {
   const info = settings.providers?.[tab];
   const meta = PROVIDERS.find((p) => p.key === tab)!;
   const isActive = settings.provider === tab;
+  const isMultiField = meta.key === "cloudflare" || meta.key === "custom";
 
   const switchTab = (k: string) => {
     setTab(k);
-    setKey("");
+    setValues({});
     setModel(settings.providers?.[k]?.model ?? "");
     setError("");
   };
 
-  const saveKey = async () => {
-    if (!key.trim() || busy) return;
+  // 저장된 값 미리보기: 키는 마스킹, AccountID/BaseURL은 원문 표시
+  const savedPreview = (field: ICredField): string => {
+    switch (field.id) {
+      case "accountId":
+        return info?.accountId ?? "";
+      case "baseUrl":
+        return info?.baseUrl ?? "";
+      default:
+        return info?.hasKey && info?.keyPreview ? t("saved_as", { preview: info.keyPreview }) : "";
+    }
+  };
+
+  const canSave =
+    !busy && meta.fields.every((f) => !f.required || (values[f.id] ?? "").trim() !== "");
+
+  const saveCreds = async () => {
+    if (busy || !canSave) return;
     setBusy(true);
     setError("");
     try {
-      await SaveProviderKey(tab, key.trim());
-      setKey("");
-      onSaved(t("toast_key_saved", { provider: meta.label }));
+      if (isMultiField) {
+        await SaveProviderConfig(meta.key, {
+          apiKey: (values["key"] ?? "").trim(),
+          baseUrl: (values["baseUrl"] ?? "").trim(),
+          accountId: (values["accountId"] ?? "").trim(),
+        });
+        setValues({});
+        onSaved(t("toast_config_saved", { provider: meta.label }));
+      } else {
+        const key = (values["key"] ?? "").trim();
+        await SaveProviderKey(meta.key, key);
+        setValues({});
+        onSaved(t("toast_key_saved", { provider: meta.label }));
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -133,19 +216,21 @@ export default function SettingsModal({ settings, onClose, onSaved }: IProps) {
           </TabsList>
         </Tabs>
 
-        <div className="field">
-          <Label>
-            {t("api_key", { provider: meta.label })} {isActive && <em className="not-italic text-primary">{t("in_use")}</em>}
-          </Label>
-          <Input
-            type="password"
-            placeholder={info?.hasKey ? t("saved_as", { preview: info.keyPreview }) : meta.placeholder}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && saveKey()}
-            autoFocus
-          />
-        </div>
+        {meta.fields.map((field) => (
+          <div className="field" key={field.id}>
+            <Label>
+              {t(field.labelKey, { provider: meta.label })} {isActive && field.id === "key" && <em className="not-italic text-primary">{t("in_use")}</em>}
+            </Label>
+            <Input
+              type={field.type === "text" ? "text" : "password"}
+              placeholder={savedPreview(field) || field.placeholder}
+              value={values[field.id] ?? ""}
+              onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+              onKeyDown={(e) => e.key === "Enter" && saveCreds()}
+              autoFocus={meta.fields[0]?.id === field.id}
+            />
+          </div>
+        ))}
 
         <div className="field">
           <Label>{t("image_model")}</Label>
@@ -205,9 +290,9 @@ export default function SettingsModal({ settings, onClose, onSaved }: IProps) {
               {t("use_provider")}
             </Button>
           )}
-          <Button onClick={saveKey} disabled={busy || !key.trim()}>
+          <Button onClick={saveCreds} disabled={!canSave}>
             {busy && <Loader2 size={13} className="animate-spin" />}
-            {busy ? t("checking") : t("save_key")}
+            {busy ? t("checking") : isMultiField ? t("save_config") : t("save_key")}
           </Button>
         </div>
       </DialogContent>

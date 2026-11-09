@@ -43,6 +43,8 @@ export function RevealInFinder(arg1:string):Promise<void>;
 
 export function SaveProviderKey(arg1:string,arg2:string):Promise<void>;
 
+export function SaveProviderConfig(arg1:string,arg2:main.ProviderConfigArgs):Promise<void>;
+
 export function SaveProviderModel(arg1:string,arg2:string):Promise<void>;
 
 export function SaveSession(arg1:string):Promise<void>;

@@ -41,9 +41,23 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // provider는 현재 활성 프로바이더 클라이언트를 반환합니다.
+// cloudflare(AccountID+토큰)와 custom(BaseURL+선택 키)는 단일 키 팩토리(gen.New)를
+// 쓸 수 없으므로 전용 생성자를 직접 호출합니다 (core.md 계약 참고).
 func (a *App) provider() (gen.Provider, error) {
 	s := config.Load()
 	cfg := s.Cfg(s.Provider)
+	switch s.Provider {
+	case gen.ProviderCloudflare:
+		if cfg.AccountID == "" || cfg.APIKey == "" {
+			return nil, fmt.Errorf("%s 자격 증명이 설정되지 않았습니다. 설정에서 입력해 주세요", gen.ProviderLabel(s.Provider))
+		}
+		return gen.NewCloudflare(cfg.AccountID, cfg.APIKey, cfg.Model), nil
+	case gen.ProviderCustom:
+		if cfg.BaseURL == "" {
+			return nil, fmt.Errorf("%s Base URL이 설정되지 않았습니다. 설정에서 입력해 주세요", gen.ProviderLabel(s.Provider))
+		}
+		return gen.NewCustom(cfg.BaseURL, cfg.APIKey, cfg.Model), nil
+	}
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("%s API 키가 설정되지 않았습니다. 설정에서 입력해 주세요", gen.ProviderLabel(s.Provider))
 	}
@@ -107,6 +121,10 @@ type ProviderInfo struct {
 	KeyPreview string   `json:"keyPreview"`
 	Model      string   `json:"model"`
 	Models     []string `json:"models"` // 선택 가능한 모델 목록 (최신 모델이 맨 앞)
+	// BaseURL은 custom(OpenAI 호환) 프로바이더의 엔드포인트 기본 URL입니다 (원문 노출).
+	BaseURL string `json:"baseUrl"`
+	// AccountID는 Cloudflare Workers AI 계정 식별자입니다 (원문 노출).
+	AccountID string `json:"accountId"`
 }
 
 // SettingsInfo는 프론트엔드에 노출되는 설정 상태입니다.
@@ -122,6 +140,18 @@ func keyPreview(key string) string {
 	return ""
 }
 
+// providerHasKey는 프로바이더별 "설정 완료" 여부를 판정합니다.
+func providerHasKey(provider string, cfg *config.ProviderCfg) bool {
+	switch provider {
+	case gen.ProviderCloudflare:
+		return cfg.AccountID != "" && cfg.APIKey != ""
+	case gen.ProviderCustom:
+		return cfg.BaseURL != ""
+	default:
+		return cfg.APIKey != ""
+	}
+}
+
 // GetSettings는 현재 설정 상태를 반환합니다 (키 원문은 노출하지 않음).
 func (a *App) GetSettings() SettingsInfo {
 	s := config.Load()
@@ -133,10 +163,12 @@ func (a *App) GetSettings() SettingsInfo {
 			model = gen.DefaultModelFor(p)
 		}
 		info.Providers[p] = ProviderInfo{
-			HasKey:     cfg.APIKey != "",
+			HasKey:     providerHasKey(p, cfg),
 			KeyPreview: keyPreview(cfg.APIKey),
 			Model:      model,
 			Models:     gen.ModelsFor(p),
+			BaseURL:    cfg.BaseURL,
+			AccountID:  cfg.AccountID,
 		}
 	}
 	return info
@@ -160,11 +192,78 @@ func (a *App) SaveProviderKey(provider, key string) error {
 	return config.Save(s)
 }
 
+// isSupportedProvider는 레지스트리에 등록된 프로바이더인지 확인합니다.
+func isSupportedProvider(provider string) bool {
+	for _, p := range gen.SupportedProviders {
+		if p == provider {
+			return true
+		}
+	}
+	return false
+}
+
+// ProviderConfigArgs는 프로바이더별 자격 증명 저장 요청입니다.
+// BaseURL(custom)과 AccountID(cloudflare)는 해당 프로바이더에서만 사용되며
+// 나머지 프로바이더에서는 무시됩니다.
+type ProviderConfigArgs struct {
+	APIKey    string `json:"apiKey"`
+	BaseURL   string `json:"baseUrl"`
+	AccountID string `json:"accountId"`
+}
+
+// SaveProviderConfig는 프로바이더별 자격 증명을 검증 후 저장합니다.
+// cloudflare/custom처럼 키 외에 추가 필드가 필요한 프로바이더를 지원합니다.
+func (a *App) SaveProviderConfig(provider string, args ProviderConfigArgs) error {
+	provider = strings.TrimSpace(provider)
+	args.APIKey = strings.TrimSpace(args.APIKey)
+	args.BaseURL = strings.TrimSpace(args.BaseURL)
+	args.AccountID = strings.TrimSpace(args.AccountID)
+
+	if !isSupportedProvider(provider) {
+		return fmt.Errorf("지원하지 않는 프로바이더입니다: %s", provider)
+	}
+
+	var c gen.Provider
+	var err error
+	switch provider {
+	case gen.ProviderCloudflare:
+		if args.AccountID == "" {
+			return errors.New("Cloudflare Account ID를 입력해 주세요")
+		}
+		if args.APIKey == "" {
+			return errors.New("Cloudflare API 토큰을 입력해 주세요")
+		}
+		c = gen.NewCloudflare(args.AccountID, args.APIKey, "")
+	case gen.ProviderCustom:
+		if args.BaseURL == "" {
+			return errors.New("Custom Base URL을 입력해 주세요")
+		}
+		c = gen.NewCustom(args.BaseURL, args.APIKey, "")
+	default:
+		if args.APIKey == "" {
+			return errors.New("API 키를 입력해 주세요")
+		}
+		c, err = gen.New(provider, args.APIKey, "")
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := c.ValidateKey(a.ctx); err != nil {
+		return err
+	}
+
+	s := config.Load()
+	cfg := s.Cfg(provider)
+	cfg.APIKey = args.APIKey
+	cfg.BaseURL = args.BaseURL
+	cfg.AccountID = args.AccountID
+	return config.Save(s)
+}
+
 // SaveProviderModel은 프로바이더의 이미지 모델을 변경합니다 (빈 값이면 기본 모델로 복원).
 func (a *App) SaveProviderModel(provider, model string) error {
-	switch provider {
-	case gen.ProviderGemini, gen.ProviderOpenAI, gen.ProviderOpenRouter, gen.ProviderFal, gen.ProviderBytePlus:
-	default:
+	if !isSupportedProvider(provider) {
 		return fmt.Errorf("지원하지 않는 프로바이더입니다: %s", provider)
 	}
 	model = strings.TrimSpace(model)
@@ -178,9 +277,7 @@ func (a *App) SaveProviderModel(provider, model string) error {
 
 // SetProvider는 활성 프로바이더를 변경합니다.
 func (a *App) SetProvider(provider string) error {
-	switch provider {
-	case gen.ProviderGemini, gen.ProviderOpenAI, gen.ProviderOpenRouter, gen.ProviderFal, gen.ProviderBytePlus:
-	default:
+	if !isSupportedProvider(provider) {
 		return fmt.Errorf("지원하지 않는 프로바이더입니다: %s", provider)
 	}
 	s := config.Load()
