@@ -256,6 +256,42 @@ Enter keys in Settings after launch, or drop a `.env` in the project root:
 cp .env.example .env   # fill in only the provider keys you use
 ```
 
+## Linux / AppImage build
+
+The Linux GUI can be packaged as a self-contained AppImage that runs on Ubuntu 22.04 and 24.04.
+The build runs on the oldest supported LTS (22.04), links against `libwebkit2gtk-4.0-dev`, and
+bundles GTK3 + webkit2gtk into the image with `linuxdeploy` + `linuxdeploy-plugin-gtk`.
+
+**Requirements** (Debian/Ubuntu package names; see `.github/workflows/release-gui.yml` for the
+full, tested list):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.0-dev \
+  libayatana-appindicator3-dev librsvg2-dev gobject-introspection \
+  libgirepository1.0-dev file curl
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+```
+
+**Build**
+
+```bash
+./scripts/build-appimage.sh   # -> build/bin/perfectpixel-x86_64.AppImage
+```
+
+The script runs `wails build -platform linux/amd64` (which also builds the frontend) and then
+packages the binary. To run: `chmod +x build/bin/perfectpixel-x86_64.AppImage && ./build/bin/perfectpixel-x86_64.AppImage`.
+
+**webkit2gtk ABI note** — the default Wails tags link `webkit2gtk-4.0` (Ubuntu 22.04). If you
+build on Ubuntu 24.04 (which only ships `webkit2gtk-4.1`), use `-tags webkit2_41`:
+
+```bash
+WAILS_TAGS="-tags webkit2_41" ./scripts/build-appimage.sh
+```
+
+CI releases the AppImage on `v*` tags via `.github/workflows/release-gui.yml`.
+
 ## Usage
 
 1. **Create a character** — enter a description, pick a style, generate the base character.
