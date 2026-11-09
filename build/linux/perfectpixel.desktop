@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PerfectPixel
+Comment=AI-based animation sprite generation studio
+Exec=perfectpixel
+Icon=perfectpixel
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;
+StartupWMClass=perfectpixel
