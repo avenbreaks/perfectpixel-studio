@@ -13,6 +13,10 @@ import (
 type ProviderCfg struct {
 	APIKey string `json:"apiKey"`
 	Model  string `json:"model"`
+	// BaseURL은 OpenAI 호환(custom) 프로바이더의 엔드포인트 기본 URL입니다.
+	BaseURL string `json:"baseUrl,omitempty"`
+	// AccountID는 Cloudflare Workers AI 계정 식별자입니다.
+	AccountID string `json:"accountId,omitempty"`
 }
 
 // Settings는 사용자 설정입니다.
@@ -23,6 +27,8 @@ type Settings struct {
 	OpenRouter ProviderCfg `json:"openrouter"`
 	Fal        ProviderCfg `json:"fal"`
 	BytePlus   ProviderCfg `json:"byteplus"`
+	Cloudflare ProviderCfg `json:"cloudflare"`
+	Custom     ProviderCfg `json:"custom"`
 
 	// 레거시 필드 (v1 → 마이그레이션용)
 	LegacyAPIKey string `json:"apiKey,omitempty"`
@@ -40,6 +46,10 @@ func (s *Settings) Cfg(provider string) *ProviderCfg {
 		return &s.Fal
 	case "byteplus":
 		return &s.BytePlus
+	case "cloudflare":
+		return &s.Cloudflare
+	case "custom":
+		return &s.Custom
 	default:
 		return &s.Gemini
 	}
@@ -107,6 +117,18 @@ func Load() Settings {
 	if s.BytePlus.APIKey == "" {
 		s.BytePlus.APIKey = firstNonEmpty(env["BYTEPLUS_API_KEY"], env["ARK_API_KEY"])
 	}
+	if s.Cloudflare.AccountID == "" {
+		s.Cloudflare.AccountID = env["CLOUDFLARE_ACCOUNT_ID"]
+	}
+	if s.Cloudflare.APIKey == "" {
+		s.Cloudflare.APIKey = env["CLOUDFLARE_API_TOKEN"]
+	}
+	if s.Custom.BaseURL == "" {
+		s.Custom.BaseURL = env["CUSTOM_IMAGE_BASE_URL"]
+	}
+	if s.Custom.APIKey == "" {
+		s.Custom.APIKey = env["CUSTOM_IMAGE_API_KEY"]
+	}
 
 	// 활성 프로바이더 자동 선택: 키가 있는 첫 프로바이더
 	if s.Provider == "" {
@@ -163,7 +185,7 @@ func loadEnvFallback() map[string]string {
 	}
 
 	// 2) OS 환경변수 (파일보다 우선)
-	for _, key := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "FAL_KEY", "FAL_API_KEY", "BYTEPLUS_API_KEY", "ARK_API_KEY"} {
+	for _, key := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "FAL_KEY", "FAL_API_KEY", "BYTEPLUS_API_KEY", "ARK_API_KEY", "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CUSTOM_IMAGE_BASE_URL", "CUSTOM_IMAGE_API_KEY"} {
 		if v := os.Getenv(key); v != "" {
 			out[key] = v
 		}

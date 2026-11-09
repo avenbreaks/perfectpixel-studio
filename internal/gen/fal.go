@@ -20,6 +20,17 @@ type Fal struct {
 	HTTP   *http.Client
 }
 
+func init() {
+	registerProvider(providerDef{
+		id:           ProviderFal,
+		label:        "fal.ai",
+		defaultModel: "fal-ai/nano-banana-pro",
+		models:       []string{"fal-ai/nano-banana-pro", "fal-ai/nano-banana", "fal-ai/flux-pro/v1.1-ultra", "fal-ai/flux/dev"},
+		sortOrder:    4,
+		newFunc:      func(apiKey, model string) Provider { return NewFal(apiKey, model) },
+	})
+}
+
 // NewFal은 새 fal.ai 클라이언트를 생성합니다.
 func NewFal(apiKey, model string) *Fal {
 	if model == "" {

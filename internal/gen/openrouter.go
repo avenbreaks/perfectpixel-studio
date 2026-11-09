@@ -15,6 +15,17 @@ import (
 
 const openRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
 
+func init() {
+	registerProvider(providerDef{
+		id:           ProviderOpenRouter,
+		label:        "OpenRouter",
+		defaultModel: "google/gemini-3-pro-image-preview",
+		models:       []string{"google/gemini-3-pro-image-preview", "google/gemini-2.5-flash-image", "google/gemini-2.5-flash-image-preview"},
+		sortOrder:    3,
+		newFunc:      func(apiKey, model string) Provider { return NewOpenRouter(apiKey, model) },
+	})
+}
+
 // OpenRouter는 OpenRouter 경유 이미지 생성 클라이언트입니다.
 type OpenRouter struct {
 	APIKey string

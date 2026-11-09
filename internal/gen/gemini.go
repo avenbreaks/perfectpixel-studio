@@ -29,6 +29,17 @@ var modelFallbacks = []string{
 
 var errModelNotFound = errors.New("요청한 모델을 찾을 수 없습니다")
 
+func init() {
+	registerProvider(providerDef{
+		id:           ProviderGemini,
+		label:        "Gemini",
+		defaultModel: DefaultModel,
+		models:       []string{DefaultModel, "gemini-3-pro-image-preview", "gemini-2.5-flash-image"},
+		sortOrder:    1,
+		newFunc:      func(apiKey, model string) Provider { return NewClient(apiKey, model) },
+	})
+}
+
 const apiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
 
 // Client는 Gemini 이미지 생성 API 클라이언트입니다.

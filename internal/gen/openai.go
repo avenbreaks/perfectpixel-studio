@@ -22,6 +22,17 @@ const (
 	openAIModelsEndpoint          = "https://api.openai.com/v1/models"
 )
 
+func init() {
+	registerProvider(providerDef{
+		id:           ProviderOpenAI,
+		label:        "OpenAI",
+		defaultModel: "gpt-image-2",
+		models:       []string{"gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"},
+		sortOrder:    2,
+		newFunc:      func(apiKey, model string) Provider { return NewOpenAI(apiKey, model) },
+	})
+}
+
 // OpenAI는 OpenAI Image API 클라이언트입니다.
 type OpenAI struct {
 	APIKey string

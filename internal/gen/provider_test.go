@@ -84,6 +84,19 @@ func TestModelsFor(t *testing.T) {
 	}
 }
 
+// TestSupportedProvidersOrder는 UI 노출 순서가 sortOrder 기준으로 고정되는지 검증합니다.
+func TestSupportedProvidersOrder(t *testing.T) {
+	want := []string{ProviderGemini, ProviderOpenAI, ProviderOpenRouter, ProviderFal, ProviderBytePlus}
+	if len(SupportedProviders) != len(want) {
+		t.Fatalf("프로바이더 수 오류: got %v want %v", SupportedProviders, want)
+	}
+	for i := range want {
+		if SupportedProviders[i] != want[i] {
+			t.Fatalf("프로바이더 순서 오류: got %v want %v", SupportedProviders, want)
+		}
+	}
+}
+
 func TestBPSizeFor(t *testing.T) {
 	if got := bpSizeFor("1:1"); got != "4096x4096" && got != "2048x2048" {
 		t.Fatalf("정사각 크기 오류: %s", got)
