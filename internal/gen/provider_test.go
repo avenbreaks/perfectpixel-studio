@@ -84,15 +84,16 @@ func TestModelsFor(t *testing.T) {
 	}
 }
 
-// TestSupportedProvidersOrder는 UI 노출 순서가 sortOrder 기준으로 고정되는지 검증합니다.
+// TestSupportedProvidersOrder는 기존 5개 프로바이더가 UI 노출 순서의 앞부분을
+// 고정적으로 차지하는지 검증합니다 (cloudflare/custom 등이 뒤에 추가되어도 무방).
 func TestSupportedProvidersOrder(t *testing.T) {
-	want := []string{ProviderGemini, ProviderOpenAI, ProviderOpenRouter, ProviderFal, ProviderBytePlus}
-	if len(SupportedProviders) != len(want) {
-		t.Fatalf("프로바이더 수 오류: got %v want %v", SupportedProviders, want)
+	prefix := []string{ProviderGemini, ProviderOpenAI, ProviderOpenRouter, ProviderFal, ProviderBytePlus}
+	if len(SupportedProviders) < len(prefix) {
+		t.Fatalf("프로바이더 수 오류: got %v want 최소 %v", SupportedProviders, prefix)
 	}
-	for i := range want {
-		if SupportedProviders[i] != want[i] {
-			t.Fatalf("프로바이더 순서 오류: got %v want %v", SupportedProviders, want)
+	for i := range prefix {
+		if SupportedProviders[i] != prefix[i] {
+			t.Fatalf("프로바이더 순서 오류: got %v want %v", SupportedProviders, prefix)
 		}
 	}
 }
