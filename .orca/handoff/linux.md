@@ -115,3 +115,84 @@ the webkit2gtk-4.0 + GTK3 libs into the AppImage. Result: the same AppImage runs
   `libwebkit2gtk-4.0.so.37` (and not a host 4.1 lib) — the `gtk` plugin's `--bundle` behavior may
   need an extra flag for webkit-specific data files.
 - `StartupWMClass=perfectpixel` is a best-guess; adjust if window grouping/dock icon misbehaves.
+---
+
+# Follow-up (2026-11-10): WebKit auxiliary-process crash fix
+
+The first AppImage bundled `libwebkit2gtk-4.0.so.37` but NOT WebKitGTK's helper
+executables, so on Ubuntu 24.04 (no webkit2gtk-4.0) launch failed with:
+`Failed to spawn child process /usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/WebKitNetworkProcess`.
+
+## What changed (this follow-up)
+
+| File | Change |
+|------|--------|
+| `scripts/patch-webkit-so.py` | NEW — binary-patches the two webkit path strings baked into the bundled `libwebkit2gtk-*.so` to a writable dir (same-length, null-padded → ELF-safe). |
+| `scripts/build-appimage.sh` | Rewrote packaging into a 3-phase flow: linuxdeploy deploy → bundle WebKit helpers + patch the .so → linuxdeploy package. Added a custom AppRun. |
+| `README.md` | Added a short "WebKit auxiliary-process fix" note. |
+| `.orca/handoff/linux.md` | This section. |
+
+## The actual root cause (why the env-var fix would NOT work)
+
+WebKitGTK spawns its helpers from a **compile-time** path. In release builds both
+override env vars are `#if ENABLE(DEVELOPER_MODE)`-gated and Ubuntu ships developer
+mode OFF:
+
+- `WEBKIT_EXEC_PATH` — dev-mode only. Verified: `strings libwebkit2gtk-4.1.so.0`
+  contains **0** occurrences of the string, but does contain the hardcoded
+  `/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1`.
+- `WEBKIT_INJECTED_BUNDLE_PATH` — also dev-mode gated in webkitgtk 2.40/2.44/2.46
+  source (`WebKitWebContext.cpp`); present in 2.52 but can't be relied on for the
+  4.0 build. So we patch the injected-bundle path string directly instead.
+
+Two path strings are embedded in `libwebkit2gtk` (confirmed with `strings` + `count`):
+`/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0` (40 bytes) and
+`/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/injected-bundle/` (57 bytes). Only
+`libwebkit2gtk` contains them (not `libjavascriptcoregtk`).
+
+## The fix
+
+1. `patch-webkit-so.py --abi 4.0 --target /tmp/pp-webkit4.0 <lib.so>` rewrites the
+   57-byte injected-bundle string first (it contains the 40-byte string as a prefix),
+   then the 40-byte PKGLIBEXECDIR, to `/tmp/pp-webkit4.0{/injected-bundle/}`. Strictly
+   shorter + null-padded → same file size, SONAME/NEEDED/relocations intact.
+2. `build-appimage.sh` bundles the whole `/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/`
+   dir (WebKitNetworkProcess, WebKitWebProcess, WebKitGPUProcess, MiniBrowser,
+   `injected-bundle/`) into `AppDir/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/`.
+3. Custom AppRun (passed via `--custom-apprun`) does, before `exec`:
+   `mkdir -p /tmp/pp-webkit4.0 && cp -a "$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0/." /tmp/pp-webkit4.0/`,
+   then `export WEBKIT_FORCE_SANDBOX=0` + `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1`,
+   sources `apprun-hooks/linuxdeploy-plugin-gtk.sh`, and `exec usr/bin/perfectpixel "$@"`.
+4. `WEBKIT_ABI` is 4.0 by default; auto-switches to 4.1 when `WAILS_TAGS` contains
+   `webkit2_41` (staging dir becomes `/tmp/pp-webkit4.1`).
+
+## Verified locally (Pop!_OS 24.04, webkit2gtk-4.1 as the stand-in)
+
+- `patch-webkit-so.py` against the real `libwebkit2gtk-4.1.so.0.19.7`: same size,
+  old strings → 0, new strings present, `readelf -d` NEEDED list + SONAME intact,
+  `ldd` resolves, relocations intact.
+- The exact `find` glob selects only the real `.so` (skips the SONAME symlink).
+- AppRun end-to-end (dummy `usr/bin/perfectpixel` + dummy helpers + dummy gtk hook):
+  stages helpers into `/tmp/pp-webkit4.0/`, sets sandbox vars, sources the gtk hook,
+  execs the app with args.
+- Two-phase linuxdeploy flow: deploy-only run + `--custom-apprun` + `--output appimage`
+  preserves the custom AppRun and arbitrary AppDir files in the final AppImage.
+
+## NOT verified locally (CI-only)
+
+- The real `wails build` binary and the actual `libwebkit2gtk-4.0` lib (no sudo → can't
+  install `libwebkit2gtk-4.0-dev`; sandbox has no 4.0 runtime). The 4.0 strings are the
+  same length/structure as 4.1, so the patch is equivalent.
+- A real GUI launch of the patched 4.0 AppImage on 22.04/24.04 — coordinator will do the
+  final `workflow_dispatch` launch test before any release.
+
+## Risks / TODO
+
+- `/tmp/pp-webkit4.0` is shared by all running instances; a hostile/other process could
+  tamper with it. Acceptable for now; could switch to a per-user XDG dir + patch that path.
+- The `.so` string patch assumes `libwebkit2gtk-4.0` keeps these exact path strings; if a
+  future webkit2gtk relocates the helpers (e.g. drops `PKGLIBEXECDIR`), the patch script
+  will fail loudly (`no path strings found`) and needs revisiting.
+- `WEBKIT_FORCE_SANDBOX=0` is deprecated in webkit2gtk ≥2.52; we also set
+  `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` for forward-compat. Both are harmless no-ops
+  on versions that don't recognize them.

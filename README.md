@@ -283,6 +283,12 @@ go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 The script runs `wails build -platform linux/amd64` (which also builds the frontend) and then
 packages the binary. To run: `chmod +x build/bin/perfectpixel-x86_64.AppImage && ./build/bin/perfectpixel-x86_64.AppImage`.
 
+**WebKit auxiliary-process fix** — WebKitGTK spawns `WebKitNetworkProcess` / `WebKitWebProcess`
+from a compile-time path (`/usr/lib/x86_64-linux-gnu/webkit2gtk-4.0`), which does not exist on
+Ubuntu 24.04. The script bundles those helper executables and binary-patches the bundled
+`libwebkit2gtk` (same-length, null-padded, ELF-safe) so the AppRun can stage them into a writable
+dir at launch — see `scripts/build-appimage.sh` and `scripts/patch-webkit-so.py`.
+
 **webkit2gtk ABI note** — the default Wails tags link `webkit2gtk-4.0` (Ubuntu 22.04). If you
 build on Ubuntu 24.04 (which only ships `webkit2gtk-4.1`), use `-tags webkit2_41`:
 
