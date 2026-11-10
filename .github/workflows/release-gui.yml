@@ -47,7 +47,8 @@ jobs:
             gobject-introspection \
             libgirepository1.0-dev \
             file \
-            curl
+            curl \
+            python3
 
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
