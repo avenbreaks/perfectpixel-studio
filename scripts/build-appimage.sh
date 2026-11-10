@@ -104,6 +104,18 @@ HELPERS="\$APPDIR/usr/lib/x86_64-linux-gnu/webkit2gtk-$WEBKIT_ABI"
 mkdir -p "\$STAGE"
 cp -a "\$HELPERS/." "\$STAGE/"
 
+# Also symlink the bundled shared libs into $STAGE: WebKit's process launcher
+# strips LD_LIBRARY_PATH for auxiliary processes, and their RUNPATH is
+# $ORIGIN, so they resolve libwebkit2gtk/libjavascriptcoregtk relative to
+# their own dir (which otherwise has only the copied helpers, no libs).
+for d in "\$APPDIR/usr/lib" "\$APPDIR/usr/lib/x86_64-linux-gnu"; do
+  [ -d "\$d" ] || continue
+  for f in "\$d"/*.so*; do
+    [ -e "\$f" ] || continue
+    ln -sf "\$f" "\$STAGE/\$(basename "\$f")"
+  done
+done
+
 # bwrap sandboxing cannot start inside an AppImage; disable it.
 export WEBKIT_FORCE_SANDBOX=0
 export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1

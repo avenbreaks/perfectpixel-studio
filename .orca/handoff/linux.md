@@ -196,3 +196,32 @@ Two path strings are embedded in `libwebkit2gtk` (confirmed with `strings` + `co
 - `WEBKIT_FORCE_SANDBOX=0` is deprecated in webkit2gtk ≥2.52; we also set
   `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` for forward-compat. Both are harmless no-ops
   on versions that don't recognize them.
+
+---
+
+# Follow-up 2 (2026-11-10): symlink bundled libs into the WebKit stage dir
+
+Second empirically-confirmed issue: the staged WebKitNetworkProcess/WebKitWebProcess
+could not load `libwebkit2gtk-4.0.so.37` — WebKit's process launcher strips
+`LD_LIBRARY_PATH` for auxiliary processes, and their RUNPATH is `$ORIGIN`, so they
+only looked in `/tmp/pp-webkit4.0` (which had helpers but no libs).
+
+Fix (in the custom AppRun, after staging the helpers): symlink every bundled shared
+lib from `$APPDIR/usr/lib` and `$APPDIR/usr/lib/x86_64-linux-gnu` into `$STAGE`, so
+the whole `$ORIGIN` RUNPATH chain resolves for the helper processes:
+
+```bash
+for d in "$APPDIR/usr/lib" "$APPDIR/usr/lib/x86_64-linux-gnu"; do
+  [ -d "$d" ] || continue
+  for f in "$d"/*.so*; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" "$STAGE/$(basename "$f")"
+  done
+done
+```
+
+Verified locally by the coordinator: with helpers + symlinked libs in `/tmp/pp-webkit4.0`,
+the AppImage launches and stays alive (Wails "Ctrl+C detected. Shutting down..."); the
+gvfs "undefined symbol g_task_set_static_name" lines are benign host-module noise.
+
+Changed: `scripts/build-appimage.sh` (AppRun heredoc) + this note.
